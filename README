@@ -1,0 +1,207 @@
+# LuluでGo！
+
+Go学習に特化したLLMチャットアプリ。学習しながら作り、成功したら他言語（TypeScript特化・Python特化など）への横展開も見込む。
+
+## キャラクター
+
+三毛猫「ルル」が主人公。GopherくんとGoの世界を一緒に旅する友だち設定。
+
+- 一人称: 「ルル」
+- 通常時: 標準語の優しめの口調
+- 正解・喜んでいる時: 「やったにゃー！」「正解にゃー！」とテンションを上げる
+- ビジュアル: 三毛猫がGopher(Go公式マスコット)を抱っこする構図。トップ画は並んで座る構図
+- Gopherは表示4.0ライセンス(CC BY 4.0)につきアプリ内にRenée Frenchのクレジット表記あり（"Go gopher designed by Renée French."）
+- 三毛猫デザイン: 目は丸め過ぎず、蝶ネクタイ・ネームタグなし（性別中立）
+
+## 技術スタック
+
+- **バックエンド**: Go（Gin）— Go学習が主目的のため、TypeScript系フレームワークは不採用
+- **DB**: Supabase（PostgreSQL + pgvector）、既存Supabaseプロジェクトに間借り（スキーマを分けて同居）
+- **認証**: Supabase Auth
+- **フロントエンド**: Next.js
+  - スタイリング: Tailwind CSS
+  - Supabase連携: @supabase/supabase-js, @supabase/ssr
+  - チャットUI: react-markdown（Markdown表示）, react-syntax-highlighter（コードのシンタックスハイライト）
+  - フォーム: react-hook-form, zod（ログイン画面のバリデーション）
+  - アイコン: lucide-react
+  - 日付表示: dayjs（履歴の相対表記など）
+  - 状態管理ライブラリは導入せず、React標準のContext/useStateで対応する方針
+- **リポジトリ構成**: モノレポ（backend/ と frontend/ を1リポジトリ内で管理）
+
+## 学習コンテンツ設計
+
+### カテゴリ
+
+基礎文法 / 並行処理(goroutine・channel) / テスト / Web・API / DB連携 / 復習 / Free(Q&A壁打ち)
+
+### モード
+
+1. **Q&A壁打ち型**: 自由に質問→AIが回答
+2. **出題型**: AIが3択問題を出題→ユーザーが回答→添削
+
+### 出題形式
+
+- 3択ボタン方式（自由記述はしない）
+- questionsに選択肢(choices)と正解インデックス(correct_index)を持たせ、正誤判定はLLMを介さずAPI側で決定的に行う（selected_indexとcorrect_indexの比較のみ）
+- LLMは判定結果を受け取ってから解説文を生成する役割に限定
+- ヒントボタンあり（問題出題と同時に表示）
+
+### 信憑性対策
+
+1. RAGでGo公式ドキュメントを情報源にする（go.dev/doc、Go言語仕様、Effective Go）
+2. 回答に出典を明記（システムプロンプトで強制）
+3. ハルシネーション対策のガードレール（わからない場合は正直に言う）
+4. 自分自身の学習メモは情報源に含めない（初心者段階のため誤り増幅リスクを回避）
+
+## DB設計
+
+| テーブル       | 役割                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `questions`    | 出題プール。常時5問キープ、閾値2問で裏で非同期補充生成                                                        |
+| `weak_points`  | 間違えた問題の記録（embedding列でpgvector類似度判定、categoryカラムあり）                                     |
+| `history`      | 全解答記録（通常出題・復習どちらも記録）                                                                      |
+| `chat_history` | 壁打ちモードの会話履歴。ユーザーごと最大100件（カテゴリ問わず合算、超過分は古い順削除、タイトルは日付ベース） |
+
+- 出題は正解・不正解に関わらずプールを消費して次に進む
+- 間違えた問題は `weak_points` に記録し、そちらで復習
+- `weak_points` は類似問題をグルーピング（pgvectorコサイン類似度、閾値超えなら既存レコードの `wrong_count` +1）
+- 復習で正解 → `wrong_count` -1（0になったら削除）／不正解 → `wrong_count` +1
+
+## API設計（最終版）
+
+```
+GET  /api/questions/next?category=xxx&mode=new|review
+POST /api/answers
+GET  /api/questions/:id/hint
+POST /api/chat
+GET  /api/chat-history
+GET  /api/weak-points?category=xxx
+GET  /api/history
+```
+
+- `mode=new`: 通常出題、プール消費
+- `mode=review`: weak_pointsの類似グループから1問取得（新規LLM生成せず既存記録を再利用）
+- `free=true`（chat用）: RAGスコープを全ドキュメント対象に
+
+## 画面構成（4画面）
+
+1. **ロゴ画面**
+2. **ログイン画面**（Supabase Auth）
+3. **カテゴリ画面**: 基礎・並行処理・テスト・Web/API・DB連携・復習の6ボタン(2列、淡い配色で分類) + Free/Q&Aボタン(横幅いっぱい)
+   - 配色: 基礎=ベージュ、並行処理=ラベンダー、テスト=ミント、Web/API=スカイブルー、DB連携=テラコッタ、復習=マスタードゴールド
+4. **チャット画面**
+   - カテゴリ選択後、いきなり自由入力にせず固定挨拶メッセージ（定型文）→「始める」「復習する」の2択ボタン
+   - 該当カテゴリのweak_pointsが0件の場合は代替メッセージ
+   - 出題フロー: 回答→答え合わせ→「気になる点ある？なければ次に進むよ」+「次へ」→自由入力で質問受付
+   - Free/Q&Aも入室時にアプリ側から挨拶メッセージ表示
+
+## RAG設計
+
+- チャンク分割: 見出し単位・300〜500トークン
+- LLMには関連チャンク2〜3個のみ渡す
+- 一度生成した解説はキャッシュしてDB保存、同じ問題の再解説時はLLM再呼び出しなし
+- レスポンス速度対策としてストリーミング表示・ローディング表示を検討中
+
+## ディレクトリ構成
+
+```
+lulu-de-go/
+├── backend/
+│   ├── cmd/
+│   │   └── server/
+│   │       └── main.go
+│   ├── internal/
+│   │   ├── handler/                 # APIハンドラ（エンドポイントごと）
+│   │   │   ├── chat.go
+│   │   │   ├── chat_test.go
+│   │   │   ├── question.go
+│   │   │   ├── question_test.go
+│   │   │   ├── answer.go
+│   │   │   ├── answer_test.go
+│   │   │   ├── weakpoint.go
+│   │   │   ├── weakpoint_test.go
+│   │   │   ├── history.go
+│   │   │   └── history_test.go
+│   │   ├── service/                 # ビジネスロジック
+│   │   │   ├── chat_service.go
+│   │   │   ├── chat_service_test.go
+│   │   │   ├── question_service.go
+│   │   │   ├── question_service_test.go
+│   │   │   ├── weakpoint_service.go # 類似度判定・wrong_count更新（テスト優先箇所）
+│   │   │   ├── weakpoint_service_test.go
+│   │   │   ├── rag_service.go
+│   │   │   └── rag_service_test.go
+│   │   ├── repository/              # DB操作（Supabase/pgvector）。DBの行→modelの詰め替えもここで完結、マッパー層は作らない方針
+│   │   │   ├── question_repo.go
+│   │   │   ├── weakpoint_repo.go
+│   │   │   ├── history_repo.go
+│   │   │   └── chat_history_repo.go
+│   │   ├── model/                   # 構造体定義
+│   │   │   ├── question.go
+│   │   │   ├── weakpoint.go
+│   │   │   └── chat.go
+│   │   ├── llm/                     # LLM呼び出し関連はここに集約（プロンプトも同居）
+│   │   │   ├── client.go
+│   │   │   ├── client_test.go
+│   │   │   ├── embedding.go
+│   │   │   ├── embedding_test.go
+│   │   │   └── prompts/
+│   │   │       ├── chat_system.txt          # 壁打ち用システムプロンプト
+│   │   │       ├── question_generate.txt    # 出題生成用
+│   │   │       ├── answer_review.txt        # 添削・解説生成用
+│   │   │       └── hint_generate.txt        # ヒント生成用
+│   │   └── middleware/
+│   │       └── auth.go              # Supabase Auth検証
+│   ├── pkg/
+│   │   └── config/
+│   │       └── config.go
+│   ├── migrations/
+│   │   └── 001_init.sql
+│   ├── go.mod
+│   └── go.sum
+│
+├── frontend/
+│   ├── app/
+│   │   ├── page.tsx                 # トップ/スプラッシュ画面（ロゴ表示）
+│   │   ├── (auth)/
+│   │   │   └── login/
+│   │   │       └── page.tsx
+│   │   ├── category/
+│   │   │   └── page.tsx
+│   │   ├── chat/
+│   │   │   └── [category]/
+│   │   │       └── page.tsx
+│   │   └── layout.tsx
+│   ├── components/
+│   │   ├── chat/
+│   │   │   ├── MessageBubble.tsx
+│   │   │   ├── ChatInput.tsx
+│   │   │   └── GreetingCard.tsx     # 「始める/復習する」の初回メッセージ
+│   │   ├── category/
+│   │   │   └── CategoryButton.tsx
+│   │   └── common/
+│   │       └── Header.tsx
+│   ├── lib/
+│   │   ├── api.ts                   # バックエンドAPI呼び出しラッパー
+│   │   └── supabase.ts              # Supabase Authクライアント
+│   ├── public/
+│   │   └── images/                  # ロゴ・アイコン・ローディングGIF等
+│   │       ├── logo/
+│   │       ├── icons/
+│   │       └── loading/
+│   ├── types/
+│   │   └── index.ts                 # APIエンドポイント単位でコメント区切りしてまとめる（ファイル分割はしない方針）
+│   └── package.json
+│
+├── README.md
+└── .gitignore
+```
+
+補足:
+
+- ローカル開発時、フロントエンドは`localhost:3000`（Next.jsデフォルト）、バックエンドは`localhost:8080`を想定。フロントの`.env.local`に`NEXT_PUBLIC_API_URL`を設定して接続する
+- テストは`handler`（入出力）・`service`（ロジック本体、特にweakpoint類似度判定）・`llm`（プロンプト組み立て・レスポンスパース）を優先して書く方針
+
+## 発展要素（今回は見送り）
+
+- コード実行による検証（サンドボックス環境が必要なため保留）

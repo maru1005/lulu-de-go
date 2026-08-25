@@ -1,0 +1,15 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# 環境変数
+.env
+
+# エディタ
+.vscode/
+.idea/
