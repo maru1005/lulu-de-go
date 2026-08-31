@@ -45,6 +45,7 @@ func vectorToString(v []float32) string {
 	return "[" + strings.Join(strs, ",") + "]"
 }
 
+// 類似を探す
 func (r *WeakPointRepository) FindSimilar(ctx context.Context, userID, category string, embedding []float32, threshold float64) (*model.WeakPoint, error) {
 	embeddingStr := vectorToString(embedding)
 
@@ -73,4 +74,44 @@ func (r *WeakPointRepository) FindSimilar(ctx context.Context, userID, category 
 		return nil, err
 	}
 	return &wp, nil
+}
+
+// wrong count　増
+func (r *WeakPointRepository) IncrementWrongCout(ctx context.Context, id string) error {
+	query := `
+	UPDATE lulu.weak_points
+	SETwrong_count = wrong_count + 1, updated_at = now()
+	WHERE id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
+}
+
+// wrog count 減
+func (r *WeakPointRepository) DecrementWrongCount(ctx context.Context, id string) error {
+	query := `
+	UPDATE lulu.weak_points
+	SET wrong_count = wrong_count -1, updated_at = now()
+	WHERE id = $1
+	RETURNING wrong_count
+	`
+
+	var wrongCount int
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&wrongCount)
+	if err != nil {
+		return err
+	}
+
+	if wrongCount <= 0 {
+		return r.Delete(ctx, id)
+	}
+
+	return nil
+}
+
+func (r *WeakPointRepository) Delete(ctx context.Context, id string) error {
+	query := `DELETE FROM lulu.weak_points WHERE id = $1`
+
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
 }
