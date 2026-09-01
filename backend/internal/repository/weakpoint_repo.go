@@ -77,10 +77,10 @@ func (r *WeakPointRepository) FindSimilar(ctx context.Context, userID, category 
 }
 
 // wrong count　増
-func (r *WeakPointRepository) IncrementWrongCout(ctx context.Context, id string) error {
+func (r *WeakPointRepository) IncrementWrongCount(ctx context.Context, id string) error {
 	query := `
 	UPDATE lulu.weak_points
-	SETwrong_count = wrong_count + 1, updated_at = now()
+	SET wrong_count = wrong_count + 1, updated_at = now()
 	WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id)

@@ -28,7 +28,7 @@ func (r *HistoryRepository) Create(ctx context.Context, h *model.History) error 
 
 func (r *HistoryRepository) ListByUser(ctx context.Context, userID string) ([]*model.History, error) {
 	query := `
-	SELECT id, user_id, category, mode, questioin_text, selected_index, correct_index, is_correct, created_at
+	SELECT id, user_id, category, mode, question_text, selected_index, correct_index, is_correct, created_at
 	FROM lulu.history
 	WHERE user_id = $1
 	ORDER BY created_at DESC
@@ -44,7 +44,7 @@ func (r *HistoryRepository) ListByUser(ctx context.Context, userID string) ([]*m
 	for rows.Next() { // 1行づつループで取り出す
 		var h model.History
 		if err := rows.Scan(
-			&h.ID, &h.UserID, &h.Category, &h.Mode, &h.QuestionText, &h.SelectedIndex, &h.IsCorrect, &h.CreatedAt,
+			&h.ID, &h.UserID, &h.Category, &h.Mode, &h.QuestionText, &h.SelectedIndex, &h.CorrectIndex, &h.IsCorrect, &h.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -39,7 +39,7 @@ func (r *QuestionRepository) GetNext(ctx context.Context, userId, category strin
 
 	query := `
 	SELECT id, user_id, category, question_text, choices, correct_index, hint, created_at
-	RROM lulu.questions
+	FROM lulu.questions
 	WHERE user_id = $1 AND categoty = $2
 	ORDER BY created_at ASC
 	LIMIT 1
