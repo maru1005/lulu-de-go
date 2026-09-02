@@ -13,6 +13,7 @@ type QuestionRepository interface {
 	GetNext(ctx context.Context, userID, category string) (*model.Question, error)
 }
 
+// 空　補充が必要
 var ErrPoolEmpty = errors.New("question pool is empty")
 
 type QuestionService struct {
